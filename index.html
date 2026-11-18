@@ -1,1584 +1,602 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Asas VR — Simulador de Voo WebXR</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background-color: #0b132b;
-            font-family: 'Inter', sans-serif;
-        }
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            touch-action: none;
-        }
-        .font-hud {
-            font-family: 'Orbitron', monospace;
-        }
-        /* Estilo customizado para o botão VR nativo injetado ou customizado */
-        .vr-btn-glow {
-            box-shadow: 0 0 25px rgba(56, 189, 248, 0.55);
-            transition: all 0.25s ease;
-        }
-        .vr-btn-glow:hover:not(:disabled) {
-            transform: translateY(-2px) scale(1.03);
-            box-shadow: 0 0 35px rgba(56, 189, 248, 0.85);
-        }
-        /* Joystick virtual para dispositivos móveis */
-        #virtual-stick-zone {
-            touch-action: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Asas VR — Simulador de Voo (PC & Óculos VR)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #050a14; font-family: 'Segoe UI', system-ui, sans-serif; color: #f8fafc;
+    }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+
+    /* Menu Inicial */
+    #overlay {
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at center, rgba(10, 25, 47, 0.85), rgba(3, 7, 18, 0.96));
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 20; padding: 20px; text-align: center;
+    }
+    #overlay.hidden { display: none; }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; letter-spacing: 2px;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .subtitle { color: #94a3b8; font-size: 1rem; max-width: 560px; margin-bottom: 24px; }
+
+    .platform-selector {
+      display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center;
+    }
+    .plat-btn {
+      background: rgba(30, 41, 59, 0.8); border: 2px solid #334155; color: #e2e8f0;
+      padding: 14px 22px; border-radius: 12px; cursor: pointer; font-size: 1rem; font-weight: 600;
+      transition: all 0.2s; min-width: 180px;
+    }
+    .plat-btn.active {
+      border-color: #38bdf8; background: rgba(14, 165, 233, 0.2); color: #fff;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
+    }
+
+    .controls-box {
+      background: rgba(15, 23, 42, 0.85); border: 1px solid #1e293b; border-radius: 12px;
+      padding: 16px 22px; max-width: 620px; width: 100%; margin-bottom: 24px;
+      text-align: left; font-size: 0.9rem; line-height: 1.6; color: #cbd5e1;
+    }
+    .controls-box strong { color: #38bdf8; }
+
+    #startBtn {
+      background: linear-gradient(135deg, #0284c7, #4f46e5);
+      border: none; color: #fff; font-size: 1.15rem; font-weight: 700;
+      padding: 16px 40px; border-radius: 999px; cursor: pointer;
+      box-shadow: 0 10px 25px rgba(2, 132, 199, 0.45); transition: transform 0.15s;
+    }
+    #startBtn:hover { transform: scale(1.04); }
+
+    /* HUD Durante o Voo */
+    #hud {
+      position: fixed; inset: 0; pointer-events: none; z-index: 10;
+      display: flex; flex-direction: column; justify-content: space-between; padding: 16px;
+    }
+    #hud.hidden { display: none; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .badge {
+      background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.35);
+      padding: 8px 14px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+      backdrop-filter: blur(4px);
+    }
+    .hud-actions { pointer-events: auto; display: flex; gap: 8px; }
+    .mini-btn {
+      background: rgba(30, 41, 59, 0.85); border: 1px solid #475569; color: #f8fafc;
+      padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
+    }
+    .mini-btn:hover { border-color: #38bdf8; }
+
+    .crosshair {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 28px; height: 28px; border: 2px solid rgba(56, 189, 248, 0.65);
+      border-radius: 50%; pointer-events: none;
+    }
+    .crosshair::after {
+      content: ''; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
+      background: #38bdf8; border-radius: 50%; transform: translate(-50%, -50%);
+    }
+
+    .bottom-bar {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      font-family: monospace; font-size: 0.95rem;
+    }
+    .telemetry {
+      background: rgba(15, 23, 42, 0.75); border: 1px solid #334155;
+      padding: 10px 16px; border-radius: 10px; display: flex; gap: 20px;
+    }
+    .telemetry span { color: #38bdf8; font-weight: bold; }
+  </style>
 </head>
-<body class="text-white antialiased">
+<body>
 
-    <!-- Container Principal WebGL / WebXR -->
-    <div id="canvas-container" class="fixed inset-0 w-full h-full z-0"></div>
+  <!-- Tela Inicial -->
+  <div id="overlay">
+    <h1>ASAS VR</h1>
+    <p class="subtitle">Simulador de voo 3D híbrido com cockpit interativo, dual-joystick VR e controles para computador.</p>
 
-    <!-- Menu Inicial / Overlay de Configuração -->
-    <div id="main-menu" class="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md transition-opacity duration-500">
-        <div class="max-w-xl w-full bg-slate-900/90 border border-sky-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl">
-            <div class="flex items-center justify-between mb-4">
-                <span class="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/30 rounded-full">
-                    WebXR • Meta Quest • Mobile • PC
-                </span>
-                <span id="vr-status-badge" class="px-3 py-1 text-xs font-semibold rounded-full bg-slate-800 text-slate-300">
-                    Verificando VR...
-                </span>
-            </div>
-
-            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2 font-hud">
-                ASAS <span class="text-sky-400">VR</span>
-            </h1>
-            <p class="text-slate-300 text-sm sm:text-base mb-6 leading-relaxed">
-                Assuma o comando dentro de um cockpit 3D interativo. Voe por ilhas tropicais, atravesse anéis aéreos e estoure balões em Realidade Virtual ou direto no navegador.
-            </p>
-
-            <!-- Seleção de Modo de Jogo -->
-            <div class="mb-6">
-                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Escolha o Modo de Voo</label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <button id="mode-challenge" type="button" class="mode-card active text-left p-4 rounded-2xl border-2 border-sky-400 bg-sky-500/15 transition">
-                        <div class="font-bold text-white flex items-center gap-2">
-                            <span>🎯</span> Desafio dos Anéis
-                        </div>
-                        <p class="text-xs text-slate-300 mt-1">Passe pelos checkpoints no céu e estoure balões contra o relógio.</p>
-                    </button>
-                    <button id="mode-free" type="button" class="mode-card text-left p-4 rounded-2xl border-2 border-slate-700 bg-slate-800/60 hover:border-slate-500 transition">
-                        <div class="font-bold text-white flex items-center gap-2">
-                            <span>🌤️</span> Voo Livre
-                        </div>
-                        <p class="text-xs text-slate-300 mt-1">Explore o arquipélago sem limite de tempo e treine pousos na pista.</p>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Resumo Rápido de Controles -->
-            <div class="bg-slate-950/70 rounded-2xl p-4 mb-6 border border-slate-800 text-xs text-slate-300 space-y-1.5">
-                <div class="font-bold text-sky-400 uppercase tracking-wider mb-1">Controles Suportados:</div>
-                <div>🥽 <strong>Óculos VR (Meta Quest):</strong> Analógicos dos controles para voar, Gatilhos para atirar/boost, ou inclinar a cabeça (Cardboard/Mobile).</div>
-                <div>⌨️ <strong>PC (Teclado/Mouse):</strong> <span class="text-white font-semibold">Setas / A-D</span> (Rolagem/Arfagem), <span class="text-white font-semibold">W/S</span> (Potência), <span class="text-white font-semibold">Q/E</span> (Leme), <span class="text-white font-semibold">Espaço</span> (Atirar), <span class="text-white font-semibold">Shift</span> (Turbo).</div>
-                <div>📱 <strong>Celular:</strong> Manche virtual na tela ou Giroscópio inclinável.</div>
-            </div>
-
-            <!-- Botões de Ação -->
-            <div class="flex flex-col sm:flex-row gap-3">
-                <button id="btn-start-standard" type="button" class="flex-1 py-4 px-6 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-base shadow-lg transition cursor-pointer">
-                    Decolar no Navegador
-                </button>
-                <button id="btn-enter-vr" type="button" disabled class="flex-1 py-4 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-extrabold text-base vr-btn-glow transition cursor-pointer">
-                    🥽 Entrar em VR
-                </button>
-            </div>
-        </div>
+    <div class="platform-selector">
+      <button class="plat-btn active" id="btnModePC" onclick="selectPlatform('pc')">💻 Computador (PC)</button>
+      <button class="plat-btn" id="btnModeVR" onclick="selectPlatform('vr')">🥽 Óculos VR (WebXR)</button>
     </div>
 
-    <!-- HUD 2D Minimalista para Tela Plana (Desktop / Mobile) -->
-    <div id="flat-hud" class="hidden fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 sm:p-6">
-        <!-- Barra Superior -->
-        <div class="flex items-start justify-between gap-2">
-            <div class="bg-slate-950/65 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-2.5 flex items-center gap-4 sm:gap-6">
-                <div>
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Velocidade</div>
-                    <div class="font-hud text-lg sm:text-xl font-bold text-sky-400"><span id="hud-speed">0</span> <span class="text-xs">KT</span></div>
-                </div>
-                <div class="h-7 w-px bg-white/10"></div>
-                <div>
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Altitude</div>
-                    <div class="font-hud text-lg sm:text-xl font-bold text-emerald-400"><span id="hud-alt">0</span> <span class="text-xs">M</span></div>
-                </div>
-                <div class="h-7 w-px bg-white/10"></div>
-                <div>
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Motor</div>
-                    <div class="font-hud text-lg sm:text-xl font-bold text-amber-400"><span id="hud-throttle">70</span>%</div>
-                </div>
-            </div>
-
-            <!-- Pontuação e Tempo (Modo Desafio) -->
-            <div id="hud-mission-box" class="bg-slate-950/65 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-2.5 flex items-center gap-4">
-                <div>
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Pontos</div>
-                    <div id="hud-score" class="font-hud text-lg sm:text-xl font-bold text-yellow-300">0</div>
-                </div>
-                <div id="hud-timer-wrap">
-                    <div class="text-[10px] uppercase tracking-wider text-slate-400">Tempo</div>
-                    <div id="hud-timer" class="font-hud text-lg sm:text-xl font-bold text-rose-400">90s</div>
-                </div>
-            </div>
-
-            <!-- Botões Rápidos no Topo -->
-            <div class="pointer-events-auto flex items-center gap-2">
-                <button id="btn-gyro-toggle" type="button" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-white/15 text-xs font-semibold hover:bg-slate-800 transition">
-                    📱 Giroscópio: OFF
-                </button>
-                <button id="btn-vr-ingame" type="button" class="hidden px-3.5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-lg hover:bg-emerald-400 transition">
-                    🥽 VR
-                </button>
-                <button id="btn-menu-open" type="button" class="px-3.5 py-2.5 rounded-xl bg-slate-900/80 border border-white/15 text-xs font-semibold hover:bg-slate-800 transition">
-                    Menu
-                </button>
-            </div>
-        </div>
-
-        <!-- Mensagem Central Flutuante (Alertas de Estol, Checkpoint, Fim de Tempo) -->
-        <div id="center-banner" class="self-center text-center transition-all duration-300 opacity-0 transform scale-95">
-            <div id="center-banner-text" class="px-6 py-3 rounded-2xl bg-slate-950/80 border border-sky-400/40 font-hud text-lg sm:text-2xl font-bold text-white shadow-2xl">
-                CHECKPOINT +100!
-            </div>
-        </div>
-
-        <!-- Controles Touch na Parte Inferior (Mobile / Tablet) -->
-        <div id="touch-controls" class="flex items-end justify-between w-full pb-2 sm:hidden pointer-events-none">
-            <!-- Manche Virtual Esquerdo -->
-            <div id="virtual-stick-zone" class="pointer-events-auto w-32 h-32 rounded-full bg-slate-900/50 border-2 border-white/20 backdrop-blur-sm relative flex items-center justify-center">
-                <div id="virtual-stick-knob" class="w-12 h-12 rounded-full bg-sky-400/80 border-2 border-white shadow-lg transform translate-x-0 translate-y-0"></div>
-            </div>
-
-            <!-- Botões Direitos (Motor, Tiro, Turbo) -->
-            <div class="pointer-events-auto flex flex-col gap-2 items-end">
-                <div class="flex gap-2">
-                    <button id="touch-throttle-down" type="button" class="w-12 h-12 rounded-2xl bg-slate-900/75 border border-white/20 font-bold text-lg active:bg-sky-500">-</button>
-                    <button id="touch-throttle-up" type="button" class="w-12 h-12 rounded-2xl bg-slate-900/75 border border-white/20 font-bold text-lg active:bg-sky-500">+</button>
-                </div>
-                <div class="flex gap-2">
-                    <button id="touch-boost" type="button" class="px-4 h-12 rounded-2xl bg-amber-500/85 text-slate-950 font-extrabold text-xs uppercase active:scale-95">Turbo</button>
-                    <button id="touch-fire" type="button" class="px-5 h-12 rounded-2xl bg-rose-500/90 text-white font-extrabold text-xs uppercase active:scale-95">Atirar</button>
-                </div>
-            </div>
-        </div>
+    <div class="controls-box" id="controlsDesc">
+      <strong>Controles PC:</strong><br>
+      • <strong>W / S</strong> ou <strong>Setas ↑/↓</strong>: Subir e descer (Arfagem)<br>
+      • <strong>A / D</strong> ou <strong>Setas ←/→</strong>: Inclinar asas (Rolagem) | <strong>Q / E</strong>: Leme<br>
+      • <strong>R / F</strong> ou <strong>Shift / Ctrl</strong>: Aumentar / Reduzir potência<br>
+      • <strong>Mouse (arrastar)</strong>: Pilotar manche | <strong>Espaço</strong>: Atirar | <strong>H</strong>: Nivelar avião
     </div>
 
-    <!-- Modal de Fim de Missão -->
-    <div id="gameover-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-        <div class="max-w-md w-full bg-slate-900 border border-sky-500/40 rounded-3xl p-6 text-center shadow-2xl">
-            <div class="text-4xl mb-2">🏆</div>
-            <h2 class="font-hud text-2xl font-extrabold text-white mb-1">TEMPO ESGOTADO!</h2>
-            <p class="text-slate-300 text-sm mb-5">Excelente voo pelo arquipélago!</p>
-            <div class="bg-slate-950 rounded-2xl p-4 mb-6 border border-slate-800">
-                <div class="text-xs uppercase tracking-wider text-slate-400">Pontuação Final</div>
-                <div id="final-score" class="font-hud text-4xl font-extrabold text-yellow-400 mt-1">0</div>
-                <div id="final-rings" class="text-xs text-sky-300 mt-2">Anéis atravessados: 0</div>
-            </div>
-            <div class="flex gap-3">
-                <button id="btn-restart-mission" type="button" class="flex-1 py-3.5 px-5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold transition cursor-pointer">
-                    Voar Novamente
-                </button>
-                <button id="btn-back-menu" type="button" class="py-3.5 px-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-semibold transition cursor-pointer">
-                    Menu
-                </button>
-            </div>
-        </div>
+    <button id="startBtn" onclick="startGame()">DECOLAR AGORA</button>
+  </div>
+
+  <!-- HUD em Voo -->
+  <div id="hud" class="hidden">
+    <div class="top-bar">
+      <div class="badge" id="scoreBadge">Anéis: 0 | Pontos: 0</div>
+      <div class="hud-actions">
+        <button class="mini-btn" onclick="levelPlane()">Nivelar (H)</button>
+        <button class="mini-btn" onclick="switchToVR()">🥽 Entrar em VR</button>
+        <button class="mini-btn" onclick="toggleStereo()">👓 Tela Dividida VR</button>
+      </div>
     </div>
 
-    <!-- Three.js r128 via CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <div class="crosshair" id="crosshair"></div>
 
-    <script>
-        /**
-         * ============================================================================
-         * ASAS VR — SIMULADOR DE VOO 3D WEBXR
-         * Arquitetura em arquivo único:
-         *  1. Sistema de Áudio Sintetizado (Web Audio API: Motor, Vento, Tiros, Anéis)
-         *  2. Gerador Procedural de Mundo 3D (Oceano, Ilhas, Montanhas, Pista, Nuvens)
-         *  3. Cockpit 3D Detalhado + HUD Diegético (CanvasTexture em tempo real para VR)
-         *  4. Física de Voo Arcade-Simulação (Sustentação, Arrasto, Rolagem, Estol)
-         *  5. Suporte Completo WebXR (Meta Quest Controllers, Cabeça/Cardboard, PC/Touch)
-         * ============================================================================
-         */
+    <div class="bottom-bar">
+      <div class="telemetry">
+        <div>VEL: <span id="hudSpeed">120</span> kt</div>
+        <div>ALT: <span id="hudAlt">350</span> m</div>
+        <div>POT: <span id="hudThrottle">65</span>%</div>
+      </div>
+    </div>
+  </div>
 
-        // --- VARIÁVEIS GLOBAIS DE ESTADO ---
-        let scene, camera, renderer;
-        let aircraftGroup, cockpitGroup, propellerMesh, stickMesh, throttleLeverMesh;
-        let vrRig; // Grupo pai da câmera dentro do cockpit para posicionamento em VR
-        let vrControllers = [];
-        let isVRActive = false;
-        let isGameRunning = false;
-        let gameMode = 'challenge'; // 'challenge' ou 'free'
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
 
-        // Estado da Aeronave
-        const planeState = {
-            position: new THREE.Vector3(0, 180, 500),
-            quaternion: new THREE.Quaternion(),
-            speed: 55,           // m/s (~110 nós)
-            minSpeed: 22,
-            maxSpeed: 130,
-            throttle: 0.70,      // 0.0 a 1.0
-            pitchInput: 0,       // -1 a 1
-            rollInput: 0,        // -1 a 1
-            yawInput: 0,         // -1 a 1
-            boostActive: false,
-            fireCooldown: 0,
-            isStalling: false
-        };
+  <script type="module">
+    import * as THREE from 'three';
 
-        // Estado da Missão
-        const missionState = {
-            score: 0,
-            ringsPassed: 0,
-            timeRemaining: 90,
-            activeRingIndex: 0
-        };
+    let selectedPlatform = 'pc';
+    let isStereoMode = false;
+    let gameStarted = false;
 
-        // Entidades Dinâmicas
-        const rings = [];
-        const balloons = [];
-        const bullets = [];
-        const clouds = [];
-        const particles = [];
+    window.selectPlatform = (plat) => {
+      selectedPlatform = plat;
+      document.getElementById('btnModePC').classList.toggle('active', plat === 'pc');
+      document.getElementById('btnModeVR').classList.toggle('active', plat === 'vr');
+      const desc = document.getElementById('controlsDesc');
+      if (plat === 'pc') {
+        desc.innerHTML = `
+          <strong>Controles PC:</strong><br>
+          • <strong>W / S</strong> ou <strong>Setas ↑/↓</strong>: Subir e descer (Arfagem)<br>
+          • <strong>A / D</strong> ou <strong>Setas ←/→</strong>: Inclinar asas (Rolagem) | <strong>Q / E</strong>: Leme<br>
+          • <strong>R / F</strong> ou <strong>Shift / Ctrl</strong>: Aumentar / Reduzir potência<br>
+          • <strong>Mouse (arrastar)</strong>: Pilotar manche | <strong>Espaço</strong>: Atirar | <strong>H</strong>: Nivelar avião
+        `;
+      } else {
+        desc.innerHTML = `
+          <strong>Controles Óculos VR (Dual-Controller):</strong><br>
+          • <strong>Controle Direito (Manche)</strong>: Analógico inclina/sobe | <strong>Grip</strong> agarra o manche | <strong>Gatilho</strong> atira<br>
+          • <strong>Controle Esquerdo (Manete)</strong>: Analógico Y acelera, X controla leme | <strong>Grip</strong> agarra manete | <strong>Gatilho</strong> turbo<br>
+          • <em>Sem WebXR? Ativa automaticamente o modo estereoscópico lado a lado!</em>
+        `;
+      }
+    };
 
-        // Textura Dinâmica do Painel de Instrumentos (HUD Diegético dentro do Cockpit)
-        let instrumentCanvas, instrumentCtx, instrumentTexture;
+    // Cena, Câmera e Renderizador
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x60a5fa);
+    scene.fog = new THREE.FogExp2(0x93c5fd, 0.00045);
 
-        // Controles de Entrada
-        const keys = {};
-        const touchStick = { active: false, x: 0, y: 0 };
-        const gyroState = { enabled: false, beta: 0, gamma: 0, baseBeta: null, baseGamma: null };
-        const mouseLook = { isDragging: false, prevX: 0, prevY: 0, yawOffset: 0, pitchOffset: 0 };
+    const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 6000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-        // --- SISTEMA DE ÁUDIO SINTETIZADO (WEB AUDIO API) ---
-        const SoundEngine = {
-            ctx: null,
-            engineOsc: null,
-            engineGain: null,
-            windGain: null,
-            initialized: false,
+    const stereoEffect = {
+      eyeSep: 0.064,
+      render(scene, cam) {
+        const w = window.innerWidth, h = window.innerHeight;
+        renderer.setScissorTest(true);
+        const camL = cam.clone();
+        const camR = cam.clone();
+        camL.aspect = (w / 2) / h; camL.updateProjectionMatrix();
+        camR.aspect = (w / 2) / h; camR.updateProjectionMatrix();
+        camL.translateX(-this.eyeSep / 2);
+        camR.translateX(this.eyeSep / 2);
 
-            init() {
-                if (this.initialized) {
-                    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
-                    return;
-                }
-                try {
-                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                    this.ctx = new AudioCtx();
+        renderer.setViewport(0, 0, w / 2, h);
+        renderer.setScissor(0, 0, w / 2, h);
+        renderer.render(scene, camL);
 
-                    // 1. Som contínuo do motor (oscilador dente de serra filtrado)
-                    this.engineOsc = this.ctx.createOscillator();
-                    this.engineOsc.type = 'sawtooth';
-                    this.engineOsc.frequency.value = 55;
+        renderer.setViewport(w / 2, 0, w / 2, h);
+        renderer.setScissor(w / 2, 0, w / 2, h);
+        renderer.render(scene, camR);
+        renderer.setScissorTest(false);
+      }
+    };
 
-                    const engineFilter = this.ctx.createBiquadFilter();
-                    engineFilter.type = 'lowpass';
-                    engineFilter.frequency.value = 180;
+    // Iluminação
+    const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x0f766e, 1.1);
+    scene.add(hemiLight);
+    const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.8);
+    sunLight.position.set(600, 1200, 400);
+    scene.add(sunLight);
 
-                    this.engineGain = this.ctx.createGain();
-                    this.engineGain.gain.value = 0.08;
+    // Oceano e Ilhas
+    const ocean = new THREE.Mesh(
+      new THREE.PlaneGeometry(16000, 16000),
+      new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.35, metalness: 0.2 })
+    );
+    ocean.rotation.x = -Math.PI / 2;
+    scene.add(ocean);
 
-                    this.engineOsc.connect(engineFilter);
-                    engineFilter.connect(this.engineGain);
-                    this.engineGain.connect(this.ctx.destination);
-                    this.engineOsc.start();
+    function createIsland(x, z, radius, height) {
+      const group = new THREE.Group();
+      const sand = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.85, radius, 6, 24),
+        new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.9 })
+      );
+      sand.position.y = 3;
+      group.add(sand);
 
-                    // 2. Ruído de vento aerodinâmico
-                    const bufferSize = this.ctx.sampleRate * 2;
-                    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                    const output = noiseBuffer.getChannelData(0);
-                    for (let i = 0; i < bufferSize; i++) {
-                        output[i] = Math.random() * 2 - 1;
-                    }
-                    const whiteNoise = this.ctx.createBufferSource();
-                    whiteNoise.buffer = noiseBuffer;
-                    whiteNoise.loop = true;
+      const hill = new THREE.Mesh(
+        new THREE.ConeGeometry(radius * 0.75, height, 18),
+        new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.85 })
+      );
+      hill.position.y = height / 2 + 4;
+      group.add(hill);
 
-                    const windFilter = this.ctx.createBiquadFilter();
-                    windFilter.type = 'bandpass';
-                    windFilter.frequency.value = 400;
-                    windFilter.Q.value = 1.5;
+      group.position.set(x, 0, z);
+      scene.add(group);
+    }
 
-                    this.windGain = this.ctx.createGain();
-                    this.windGain.gain.value = 0.02;
+    createIsland(0, -800, 260, 110);
+    createIsland(700, -1800, 340, 180);
+    createIsland(-850, -1600, 290, 140);
+    createIsland(200, -3000, 420, 230);
+    createIsland(-600, 600, 250, 95);
 
-                    whiteNoise.connect(windFilter);
-                    windFilter.connect(this.windGain);
-                    this.windGain.connect(this.ctx.destination);
-                    whiteNoise.start();
+    // Nuvens
+    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.88 });
+    for (let i = 0; i < 45; i++) {
+      const cloud = new THREE.Group();
+      for (let j = 0; j < 4; j++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(22 + Math.random() * 18, 10, 10), cloudMat);
+        puff.position.set((Math.random() - 0.5) * 45, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 30);
+        cloud.add(puff);
+      }
+      cloud.position.set((Math.random() - 0.5) * 5000, 280 + Math.random() * 350, (Math.random() - 0.5) * 5000);
+      scene.add(cloud);
+    }
 
-                    this.initialized = true;
-                } catch (e) {
-                    console.warn('Áudio não pôde ser iniciado:', e);
-                }
-            },
+    // Anéis Aéreos (Checkpoints)
+    const rings = [];
+    const ringGeo = new THREE.TorusGeometry(26, 2.2, 12, 32);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 0.5 });
 
-            update(throttle, speedRatio, isRunning) {
-                if (!this.initialized || !this.ctx) return;
-                const now = this.ctx.currentTime;
-                if (!isRunning) {
-                    this.engineGain.gain.setTargetAtTime(0.01, now, 0.1);
-                    this.windGain.gain.setTargetAtTime(0.005, now, 0.1);
-                    return;
-                }
-                const targetFreq = 42 + throttle * 65 + speedRatio * 25;
-                this.engineOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
-                this.engineGain.gain.setTargetAtTime(0.06 + throttle * 0.07, now, 0.08);
-                this.windGain.gain.setTargetAtTime(0.01 + speedRatio * 0.08, now, 0.1);
-            },
+    for (let i = 0; i < 15; i++) {
+      const ring = new THREE.Mesh(ringGeo, ringMat.clone());
+      ring.position.set(
+        Math.sin(i * 0.7) * 550,
+        160 + (i % 4) * 55,
+        -450 - i * 320
+      );
+      ring.rotation.y = Math.cos(i * 0.7) * 0.4;
+      scene.add(ring);
+      rings.push({ mesh: ring, passed: false });
+    }
 
-            playRingSound() {
-                if (!this.initialized) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(523.25, now); // Dó5
-                osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.25); // Dó6
-                gain.gain.setValueAtTime(0.22, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.35);
-            },
+    // Aeronave e Cockpit 3D
+    const aircraft = new THREE.Group();
+    aircraft.position.set(0, 220, 0);
+    scene.add(aircraft);
 
-            playLaserSound() {
-                if (!this.initialized) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(680, now);
-                osc.frequency.exponentialRampToValueAtTime(140, now + 0.12);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.13);
-            },
+    const playerRig = new THREE.Group();
+    playerRig.position.set(0, 0.55, 0.2);
+    playerRig.add(camera);
+    aircraft.add(playerRig);
 
-            playPopSound() {
-                if (!this.initialized) return;
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(220, now);
-                osc.frequency.exponentialRampToValueAtTime(55, now + 0.18);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start(now);
-                osc.stop(now + 0.2);
+    // Fuselagem / Nariz / Asas visíveis do cockpit
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.4, roughness: 0.4 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.3, roughness: 0.5 });
+
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 2.2), bodyMat);
+    nose.position.set(0, 0.05, -1.3);
+    aircraft.add(nose);
+
+    const leftWing = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.08, 1.1), trimMat);
+    leftWing.position.set(-2.9, -0.05, -0.4);
+    aircraft.add(leftWing);
+
+    const rightWing = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.08, 1.1), trimMat);
+    rightWing.position.set(2.9, -0.05, -0.4);
+    aircraft.add(rightWing);
+
+    // Painel de Instrumentos 3D (Canvas Texture)
+    const dashCanvas = document.createElement('canvas');
+    dashCanvas.width = 512; dashCanvas.height = 256;
+    const dashCtx = dashCanvas.getContext('2d');
+    const dashTex = new THREE.CanvasTexture(dashCanvas);
+
+    const dashMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.05, 0.48),
+      new THREE.MeshBasicMaterial({ map: dashTex })
+    );
+    dashMesh.position.set(0, 0.38, -0.68);
+    dashMesh.rotation.x = -0.25;
+    aircraft.add(dashMesh);
+
+    // Manche Direito e Manete Esquerda 3D
+    const stickPivot = new THREE.Group();
+    stickPivot.position.set(0.24, 0.05, -0.35);
+    const stickShaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.028, 0.36, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b })
+    );
+    stickShaft.position.y = 0.18;
+    const stickGrip = new THREE.Mesh(
+      new THREE.SphereGeometry(0.042, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xef4444 })
+    );
+    stickGrip.position.y = 0.36;
+    stickPivot.add(stickShaft, stickGrip);
+    aircraft.add(stickPivot);
+
+    const throttlePivot = new THREE.Group();
+    throttlePivot.position.set(-0.34, 0.12, -0.35);
+    const throttleLever = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.24, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0x334155 })
+    );
+    throttleLever.position.y = 0.12;
+    const throttleHandle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.11, 0.045, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+    );
+    throttleHandle.position.y = 0.24;
+    throttlePivot.add(throttleLever, throttleHandle);
+    aircraft.add(throttlePivot);
+
+    // Controles VR Dual-Controller (Luvas de Piloto)
+    const vrControllers = [];
+    for (let i = 0; i < 2; i++) {
+      const ctrl = renderer.xr.getController(i);
+      const glove = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.06, 0.14),
+        new THREE.MeshStandardMaterial({ color: i === 0 ? 0x38bdf8 : 0xf59e0b })
+      );
+      ctrl.add(glove);
+      ctrl.userData = { gripPressed: false, triggerPressed: false };
+      ctrl.addEventListener('squeezestart', () => { ctrl.userData.gripPressed = true; });
+      ctrl.addEventListener('squeezeend', () => { ctrl.userData.gripPressed = false; });
+      ctrl.addEventListener('selectstart', () => { ctrl.userData.triggerPressed = true; });
+      ctrl.addEventListener('selectend', () => { ctrl.userData.triggerPressed = false; });
+      playerRig.add(ctrl);
+      vrControllers.push(ctrl);
+    }
+
+    // Projéteis
+    const bullets = [];
+    const bulletGeo = new THREE.SphereGeometry(0.28, 6, 6);
+    const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+    let lastShot = 0;
+
+    function fireWeapon() {
+      const now = performance.now();
+      if (now - lastShot < 130) return;
+      lastShot = now;
+      [-1.4, 1.4].forEach(offsetX => {
+        const b = new THREE.Mesh(bulletGeo, bulletMat);
+        const worldPos = new THREE.Vector3(offsetX, 0, -2.2).applyMatrix4(aircraft.matrixWorld);
+        b.position.copy(worldPos);
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(aircraft.quaternion);
+        b.userData = { vel: dir.multiplyScalar(320), life: 2.0 };
+        scene.add(b);
+        bullets.push(b);
+      });
+    }
+
+    // Estado de Voo e Entradas
+    const flight = { throttle: 0.65, speed: 95, pitch: 0, roll: 0, yaw: 0, score: 0, rings: 0 };
+    const keys = {};
+    let mouseDrag = false, mouseStick = { x: 0, y: 0 };
+
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'KeyH') levelPlane();
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      window.focus();
+      if (e.button === 0) mouseDrag = true;
+      if (e.button === 2) keys['Space'] = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) { mouseDrag = false; mouseStick.x = 0; mouseStick.y = 0; }
+      if (e.button === 2) keys['Space'] = false;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!mouseDrag) return;
+      mouseStick.x = THREE.MathUtils.clamp((e.clientX / window.innerWidth) * 2 - 1, -1, 1);
+      mouseStick.y = THREE.MathUtils.clamp((e.clientY / window.innerHeight) * 2 - 1, -1, 1);
+    });
+    window.addEventListener('wheel', (e) => {
+      flight.throttle = THREE.MathUtils.clamp(flight.throttle - e.deltaY * 0.0005, 0, 1);
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+
+    window.levelPlane = () => {
+      const euler = new THREE.Euler().setFromQuaternion(aircraft.quaternion, 'YXZ');
+      euler.x = 0; euler.z = 0;
+      aircraft.quaternion.setFromEuler(euler);
+    };
+
+    window.toggleStereo = () => {
+      isStereoMode = !isStereoMode;
+      document.getElementById('crosshair').style.display = isStereoMode ? 'none' : 'block';
+    };
+
+    window.switchToVR = async () => {
+      if ('xr' in navigator) {
+        const supported = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+        if (supported) {
+          const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+          renderer.xr.setSession(session);
+          return;
+        }
+      }
+      isStereoMode = true;
+      document.getElementById('crosshair').style.display = 'none';
+      alert('Headset WebXR não detectado neste navegador. Modo VR Estereoscópico (Tela Dividida) ativado!');
+    };
+
+    window.startGame = async () => {
+      document.getElementById('overlay').classList.add('hidden');
+      document.getElementById('hud').classList.remove('hidden');
+      gameStarted = true;
+      window.focus();
+      if (selectedPlatform === 'vr') {
+        await window.switchToVR();
+      }
+    };
+
+    function updateDashboard() {
+      const ctx = dashCtx;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, 512, 256);
+
+      // Horizonte Artificial
+      ctx.save();
+      ctx.translate(256, 128);
+      const euler = new THREE.Euler().setFromQuaternion(aircraft.quaternion, 'YXZ');
+      ctx.rotate(-euler.z);
+      const pitchOffset = THREE.MathUtils.radToDeg(euler.x) * 2.2;
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(-120, -120 + pitchOffset, 240, 120);
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(-120, pitchOffset, 240, 120);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-90, pitchOffset); ctx.lineTo(90, pitchOffset); ctx.stroke();
+      ctx.restore();
+
+      // Textos Aviônicos
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText(`VEL: ${Math.round(flight.speed * 1.9)} KT`, 24, 55);
+      ctx.fillText(`ALT: ${Math.max(0, Math.round(aircraft.position.y))} M`, 340, 55);
+      ctx.fillStyle = '#4ade80';
+      ctx.fillText(`POT: ${Math.round(flight.throttle * 100)}%`, 24, 215);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(`ANÉIS: ${flight.rings}/15`, 340, 215);
+
+      dashTex.needsUpdate = true;
+    }
+
+    // Loop Principal
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const dt = Math.min(clock.getDelta(), 0.05);
+
+      if (gameStarted) {
+        let pitchInput = mouseStick.y;
+        let rollInput = -mouseStick.x;
+        let yawInput = 0;
+        let boost = false;
+
+        if (keys['KeyW'] || keys['ArrowUp']) pitchInput -= 1;
+        if (keys['KeyS'] || keys['ArrowDown']) pitchInput += 1;
+        if (keys['KeyA'] || keys['ArrowLeft']) rollInput += 1;
+        if (keys['KeyD'] || keys['ArrowRight']) rollInput -= 1;
+        if (keys['KeyQ']) yawInput += 1;
+        if (keys['KeyE']) yawInput -= 1;
+        if (keys['KeyR'] || keys['ShiftLeft']) flight.throttle = Math.min(1, flight.throttle + dt * 0.5);
+        if (keys['KeyF'] || keys['ControlLeft']) flight.throttle = Math.max(0, flight.throttle - dt * 0.5);
+        if (keys['Space']) fireWeapon();
+
+        // Leitura dos 2 Controles VR (Gamepads WebXR)
+        const session = renderer.xr.getSession();
+        if (session) {
+          for (const source of session.inputSources) {
+            if (!source.gamepad) continue;
+            const axes = source.gamepad.axes;
+            if (source.handedness === 'right') {
+              rollInput -= (axes[2] || 0);
+              pitchInput += (axes[3] || 0);
+              if (source.gamepad.buttons[0]?.pressed) fireWeapon();
+            } else if (source.handedness === 'left') {
+              yawInput -= (axes[2] || 0);
+              flight.throttle = THREE.MathUtils.clamp(flight.throttle - (axes[3] || 0) * dt * 0.8, 0, 1);
+              if (source.gamepad.buttons[0]?.pressed) boost = true;
             }
-        };
-
-        // --- INICIALIZAÇÃO DA CENA 3D E WEBXR ---
-        function initScene() {
-            const container = document.getElementById('canvas-container');
-
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x6bb8ff);
-            scene.fog = new THREE.FogExp2(0x8ecae6, 0.00042);
-
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 4500);
-
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; // Habilita WebXR nativo
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            container.appendChild(renderer.domElement);
-
-            setupLights();
-            buildWorldEnvironment();
-            buildPlayerAircraftAndCockpit();
-            setupMissionCourse();
-            setupWebXR();
-            setupEventListeners();
-
-            // Inicia o loop compatível com WebXR (setAnimationLoop funciona tanto em VR quanto 2D)
-            const clock = new THREE.Clock();
-            renderer.setAnimationLoop(() => {
-                const dt = Math.min(clock.getDelta(), 0.05);
-                updateGame(dt);
-                renderer.render(scene, camera);
-            });
+          }
         }
 
-        // --- ILUMINAÇÃO E ATMOSFERA ---
-        function setupLights() {
-            const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1e3a8a, 0.85);
-            hemiLight.position.set(0, 600, 0);
-            scene.add(hemiLight);
+        // Animação do Manche e Manete 3D
+        stickPivot.rotation.x = THREE.MathUtils.clamp(pitchInput, -1, 1) * 0.35;
+        stickPivot.rotation.z = THREE.MathUtils.clamp(rollInput, -1, 1) * 0.35;
+        throttlePivot.rotation.x = (0.5 - flight.throttle) * 0.7;
 
-            const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.35);
-            sunLight.position.set(600, 950, -400);
-            sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 1024;
-            sunLight.shadow.mapSize.height = 1024;
-            scene.add(sunLight);
+        // Física de Voo Simplificada
+        const targetSpeed = (35 + flight.throttle * 125) * (boost ? 1.45 : 1.0);
+        flight.speed = THREE.MathUtils.lerp(flight.speed, targetSpeed, dt * 1.8);
 
-            // Disco Solar Visual no Horizonte
-            const sunGeo = new THREE.SphereGeometry(75, 24, 24);
-            const sunMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-            const sunMesh = new THREE.Mesh(sunGeo, sunMat);
-            sunMesh.position.copy(sunLight.position).multiplyScalar(2.2);
-            scene.add(sunMesh);
+        aircraft.rotateX(THREE.MathUtils.clamp(pitchInput, -1, 1) * 1.35 * dt);
+        aircraft.rotateZ(THREE.MathUtils.clamp(rollInput, -1, 1) * 2.1 * dt);
+        aircraft.rotateY(THREE.MathUtils.clamp(yawInput, -1, 1) * 0.9 * dt);
+
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(aircraft.quaternion);
+        aircraft.position.addScaledVector(forward, flight.speed * dt);
+
+        // Evita atravessar o oceano
+        if (aircraft.position.y < 8) {
+          aircraft.position.y = 8;
+          levelPlane();
         }
 
-        // --- CONSTRUÇÃO DO AMBIENTE 3D (OCEANO, ILHAS, PISTA, NUVENS) ---
-        function buildWorldEnvironment() {
-            // Oceano Infinito Estilizado
-            const oceanGeo = new THREE.PlaneGeometry(14000, 14000, 32, 32);
-            oceanGeo.rotateX(-Math.PI / 2);
-            const oceanMat = new THREE.MeshStandardMaterial({
-                color: 0x0284c7,
-                roughness: 0.25,
-                metalness: 0.35
-            });
-            const ocean = new THREE.Mesh(oceanGeo, oceanMat);
-            ocean.position.y = 0;
-            scene.add(ocean);
+        // Checagem dos Anéis
+        rings.forEach(r => {
+          r.mesh.rotation.z += dt * 0.8;
+          if (!r.passed && aircraft.position.distanceTo(r.mesh.position) < 28) {
+            r.passed = true;
+            r.mesh.material.color.setHex(0x22c55e);
+            r.mesh.material.emissive.setHex(0x16a34a);
+            flight.rings++;
+            flight.score += 100;
+            document.getElementById('scoreBadge').textContent = `Anéis: ${flight.rings}/15 | Pontos: ${flight.score}`;
+          }
+        });
 
-            // Ilha Central com Pista de Pouso
-            createMainRunwayIsland(0, 0);
-
-            // Arquipélago de Ilhas Montanhosas ao Redor
-            const islandCoords = [
-                { x: -650, z: -700, r: 260, h: 160 },
-                { x: 750, z: -600, r: 310, h: 210 },
-                { x: -800, z: 550, r: 280, h: 145 },
-                { x: 680, z: 650, r: 240, h: 190 },
-                { x: 0, z: -1350, r: 380, h: 270 },
-                { x: -1350, z: -150, r: 320, h: 180 },
-                { x: 1350, z: -100, r: 340, h: 220 }
-            ];
-
-            islandCoords.forEach(isl => {
-                createVolcanicIsland(isl.x, isl.z, isl.r, isl.h);
-            });
-
-            // Nuvens Volumétricas Estilizadas Low-Poly
-            const cloudMat = new THREE.MeshLambertMaterial({
-                color: 0xffffff,
-                transparent: true,
-                opacity: 0.92
-            });
-
-            for (let i = 0; i < 48; i++) {
-                const cloudGroup = new THREE.Group();
-                const puffs = 3 + Math.floor(Math.random() * 4);
-                for (let p = 0; p < puffs; p++) {
-                    const puffGeo = new THREE.DodecahedronGeometry(18 + Math.random() * 22, 1);
-                    const puff = new THREE.Mesh(puffGeo, cloudMat);
-                    puff.position.set(
-                        (p - puffs / 2) * 22,
-                        (Math.random() - 0.5) * 8,
-                        (Math.random() - 0.5) * 16
-                    );
-                    puff.scale.set(1.3, 0.75, 1.0);
-                    cloudGroup.add(puff);
-                }
-                cloudGroup.position.set(
-                    (Math.random() - 0.5) * 3400,
-                    190 + Math.random() * 260,
-                    (Math.random() - 0.5) * 3400
-                );
-                scene.add(cloudGroup);
-                clouds.push(cloudGroup);
-            }
+        // Atualização de Tiros
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          b.position.addScaledVector(b.userData.vel, dt);
+          b.userData.life -= dt;
+          if (b.userData.life <= 0) {
+            scene.remove(b);
+            bullets.splice(i, 1);
+          }
         }
 
-        function createMainRunwayIsland(cx, cz) {
-            const group = new THREE.Group();
-            group.position.set(cx, 0, cz);
-
-            // Base de areia
-            const sandGeo = new THREE.CylinderGeometry(360, 410, 6, 32);
-            const sandMat = new THREE.MeshLambertMaterial({ color: 0xfde68a });
-            const sand = new THREE.Mesh(sandGeo, sandMat);
-            sand.position.y = 2;
-            group.add(sand);
-
-            // Gramado central
-            const grassGeo = new THREE.CylinderGeometry(325, 345, 7, 32);
-            const grassMat = new THREE.MeshLambertMaterial({ color: 0x22c55e });
-            const grass = new THREE.Mesh(grassGeo, grassMat);
-            grass.position.y = 3;
-            group.add(grass);
-
-            // Pista de Asfalto
-            const runwayGeo = new THREE.BoxGeometry(36, 1.2, 460);
-            const runwayMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
-            const runway = new THREE.Mesh(runwayGeo, runwayMat);
-            runway.position.y = 6.8;
-            group.add(runway);
-
-            // Faixas Brancas da Pista
-            const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            for (let z = -200; z <= 200; z += 30) {
-                const stripe = new THREE.Mesh(new THREE.BoxGeometry(2, 0.3, 14), stripeMat);
-                stripe.position.set(0, 7.5, z);
-                group.add(stripe);
-            }
-
-            // Torre de Controle Simples
-            const towerBase = new THREE.Mesh(
-                new THREE.BoxGeometry(16, 42, 16),
-                new THREE.MeshLambertMaterial({ color: 0xf8fafc })
-            );
-            towerBase.position.set(45, 25, -40);
-            group.add(towerBase);
-
-            const towerCab = new THREE.Mesh(
-                new THREE.CylinderGeometry(13, 10, 12, 8),
-                new THREE.MeshLambertMaterial({ color: 0x0ea5e9 })
-            );
-            towerCab.position.set(45, 50, -40);
-            group.add(towerCab);
-
-            scene.add(group);
-        }
-
-        function createVolcanicIsland(x, z, radius, height) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
-
-            // Praia
-            const beach = new THREE.Mesh(
-                new THREE.CylinderGeometry(radius * 0.9, radius * 1.1, 6, 16),
-                new THREE.MeshLambertMaterial({ color: 0xfcd34d })
-            );
-            beach.position.y = 2;
-            group.add(beach);
-
-            // Montanha
-            const mountain = new THREE.Mesh(
-                new THREE.ConeGeometry(radius * 0.85, height, 14),
-                new THREE.MeshLambertMaterial({ color: 0x15803d })
-            );
-            mountain.position.y = height / 2 + 3;
-            group.add(mountain);
-
-            // Pico rochoso/nevado se for alta
-            if (height > 180) {
-                const peak = new THREE.Mesh(
-                    new THREE.ConeGeometry(radius * 0.28, height * 0.33, 14),
-                    new THREE.MeshLambertMaterial({ color: 0xe2e8f0 })
-                );
-                peak.position.y = height * 0.84 + 3;
-                group.add(peak);
-            }
-
-            scene.add(group);
-        }
-
-        // --- CONSTRUÇÃO DO AVIÃO E COCKPIT 3D INTERATIVO PARA VR ---
-        function buildPlayerAircraftAndCockpit() {
-            aircraftGroup = new THREE.Group();
-            aircraftGroup.position.copy(planeState.position);
-            scene.add(aircraftGroup);
-
-            // Rig da Câmera VR (posição dos olhos do piloto no assento)
-            vrRig = new THREE.Group();
-            vrRig.position.set(0, 0.55, 0.15);
-            vrRig.add(camera);
-            aircraftGroup.add(vrRig);
-
-            cockpitGroup = new THREE.Group();
-            aircraftGroup.add(cockpitGroup);
-
-            const fuselageMat = new THREE.MeshStandardMaterial({
-                color: 0xdc2626, // Vermelho acrobático clássico
-                roughness: 0.35,
-                metalness: 0.3
-            });
-            const darkMetalMat = new THREE.MeshStandardMaterial({
-                color: 0x1e293b,
-                roughness: 0.5,
-                metalness: 0.6
-            });
-
-            // 1. Capô Frontal do Motor (visível à frente do piloto)
-            const noseMesh = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.42, 0.58, 1.65, 16),
-                fuselageMat
-            );
-            noseMesh.rotation.x = Math.PI / 2;
-            noseMesh.position.set(0, 0.02, -1.35);
-            cockpitGroup.add(noseMesh);
-
-            // 2. Hélice Giratória na Frente
-            const propGroup = new THREE.Group();
-            propGroup.position.set(0, 0.02, -2.22);
-            const spinner = new THREE.Mesh(
-                new THREE.ConeGeometry(0.16, 0.35, 12),
-                new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.7, roughness: 0.2 })
-            );
-            spinner.rotation.x = -Math.PI / 2;
-            propGroup.add(spinner);
-
-            const bladeGeo = new THREE.BoxGeometry(1.75, 0.11, 0.03);
-            const bladeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
-            const blade1 = new THREE.Mesh(bladeGeo, bladeMat);
-            const blade2 = new THREE.Mesh(bladeGeo, bladeMat);
-            blade2.rotation.z = Math.PI / 2;
-            propGroup.add(blade1, blade2);
-            propellerMesh = propGroup;
-            cockpitGroup.add(propellerMesh);
-
-            // 3. Asas Laterais (visíveis ao olhar para esquerda/direita em VR!)
-            const wingGeo = new THREE.BoxGeometry(8.6, 0.12, 1.35);
-            const wingMesh = new THREE.Mesh(wingGeo, fuselageMat);
-            wingMesh.position.set(0, -0.15, -0.45);
-            cockpitGroup.add(wingMesh);
-
-            // Faixas brancas nas pontas das asas
-            const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const leftTip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.13, 1.36), tipMat);
-            leftTip.position.set(-3.9, -0.15, -0.45);
-            const rightTip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.13, 1.36), tipMat);
-            rightTip.position.set(3.9, -0.15, -0.45);
-            cockpitGroup.add(leftTip, rightTip);
-
-            // 4. Estrutura do Cockpit (Bordas laterais e arco do para-brisa)
-            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 1.6), darkMetalMat);
-            leftWall.position.set(-0.56, 0.12, -0.15);
-            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.55, 1.6), darkMetalMat);
-            rightWall.position.set(0.56, 0.12, -0.15);
-            cockpitGroup.add(leftWall, rightWall);
-
-            // Montantes finos do para-brisa (sem bloquear a visão)
-            const frameMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 });
-            const pillarL = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.65), frameMat);
-            pillarL.position.set(-0.46, 0.55, -0.58);
-            pillarL.rotation.set(-0.35, 0, -0.2);
-
-            const pillarR = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.65), frameMat);
-            pillarR.position.set(0.46, 0.55, -0.58);
-            pillarR.rotation.set(-0.35, 0, 0.2);
-
-            const topFrame = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.03, 0.03), frameMat);
-            topFrame.position.set(0, 0.84, -0.46);
-            cockpitGroup.add(pillarL, pillarR, topFrame);
-
-            // 5. Painel de Instrumentos Diegético (Tela digital 3D no painel para leitura perfeita em VR)
-            instrumentCanvas = document.createElement('canvas');
-            instrumentCanvas.width = 512;
-            instrumentCanvas.height = 256;
-            instrumentCtx = instrumentCanvas.getContext('2d');
-            instrumentTexture = new THREE.CanvasTexture(instrumentCanvas);
-
-            const dashBox = new THREE.Mesh(
-                new THREE.BoxGeometry(0.95, 0.34, 0.22),
-                darkMetalMat
-            );
-            dashBox.position.set(0, 0.24, -0.68);
-            dashBox.rotation.x = -0.22;
-            cockpitGroup.add(dashBox);
-
-            const screenMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.84, 0.28),
-                new THREE.MeshBasicMaterial({ map: instrumentTexture })
-            );
-            screenMesh.position.set(0, 0.255, -0.565);
-            screenMesh.rotation.x = -0.22;
-            cockpitGroup.add(screenMesh);
-
-            // 6. Manche Interativo (se move conforme comandos do piloto)
-            const stickBase = new THREE.Group();
-            stickBase.position.set(0, -0.15, -0.35);
-            const stickShaft = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.022, 0.028, 0.36),
-                frameMat
-            );
-            stickShaft.position.y = 0.18;
-            const stickGrip = new THREE.Mesh(
-                new THREE.CylinderGeometry(0.032, 0.028, 0.11),
-                new THREE.MeshStandardMaterial({ color: 0xef4444 })
-            );
-            stickGrip.position.y = 0.34;
-            stickBase.add(stickShaft, stickGrip);
-            stickMesh = stickBase;
-            cockpitGroup.add(stickMesh);
-
-            // 7. Manete de Potência (Throttle) à Esquerda
-            const throttleBase = new THREE.Group();
-            throttleBase.position.set(-0.44, 0.15, -0.32);
-            const throttleArm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.02), frameMat);
-            throttleArm.position.y = 0.08;
-            const throttleKnob = new THREE.Mesh(
-                new THREE.SphereGeometry(0.032, 12, 12),
-                new THREE.MeshStandardMaterial({ color: 0xf59e0b })
-            );
-            throttleKnob.position.y = 0.16;
-            throttleBase.add(throttleArm, throttleKnob);
-            throttleLeverMesh = throttleBase;
-            cockpitGroup.add(throttleLeverMesh);
-        }
-
-        // --- DESENHO DO PAINEL DE INSTRUMENTOS 3D (HORIZONTE ARTIFICIAL, VELOCÍMETRO, ALTÍMETRO) ---
-        function updateCockpitInstruments() {
-            if (!instrumentCtx) return;
-            const ctx = instrumentCtx;
-            const w = instrumentCanvas.width;
-            const h = instrumentCanvas.height;
-
-            // Fundo escuro do painel aviônico
-            ctx.fillStyle = '#090d16';
-            ctx.fillRect(0, 0, w, h);
-
-            // Borda externa
-            ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(4, 4, w - 8, h - 8);
-
-            // Extrair ângulos de arfagem (pitch) e rolagem (roll) da aeronave
-            const euler = new THREE.Euler().setFromQuaternion(planeState.quaternion, 'YXZ');
-            const pitchDeg = THREE.MathUtils.radToDeg(euler.x);
-            const rollRad = euler.z;
-
-            // --- INSTRUMENTO CENTRAL: HORIZONTE ARTIFICIAL ---
-            const cx = w / 2;
-            const cy = h / 2;
-            const radius = 88;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.clip();
-
-            ctx.translate(cx, cy);
-            ctx.rotate(-rollRad);
-            const pitchOffset = THREE.MathUtils.clamp(pitchDeg * 2.2, -75, 75);
-
-            // Céu azul
-            ctx.fillStyle = '#0284c7';
-            ctx.fillRect(-150, -150 + pitchOffset, 300, 150);
-
-            // Terra marrom/verde
-            ctx.fillStyle = '#78350f';
-            ctx.fillRect(-150, pitchOffset, 300, 150);
-
-            // Linha do horizonte
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(-120, pitchOffset);
-            ctx.lineTo(120, pitchOffset);
-            ctx.stroke();
-
-            ctx.restore();
-
-            // Asa fixa de referência no centro do horizonte artificial
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(cx - 35, cy);
-            ctx.lineTo(cx - 12, cy);
-            ctx.lineTo(cx - 6, cy + 8);
-            ctx.moveTo(cx + 35, cy);
-            ctx.lineTo(cx + 12, cy);
-            ctx.lineTo(cx + 6, cy + 8);
-            ctx.stroke();
-
-            // Aro do Horizonte
-            ctx.strokeStyle = '#94a3b8';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // --- INSTRUMENTO ESQUERDO: VELOCIDADE & POTÊNCIA ---
-            const knots = Math.round(planeState.speed * 1.94);
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('VELOCIDADE', 82, 48);
-
-            ctx.fillStyle = planeState.isStalling ? '#ef4444' : '#38bdf8';
-            ctx.font = 'bold 38px monospace';
-            ctx.fillText(`${knots}`, 82, 92);
-
-            ctx.fillStyle = '#cbd5e1';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText('NÓS (KT)', 82, 114);
-
-            // Barra de Potência
-            const thrPct = Math.round(planeState.throttle * 100);
-            ctx.fillStyle = '#f59e0b';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.fillText(`MOTOR: ${thrPct}%`, 82, 165);
-            ctx.strokeStyle = '#475569';
-            ctx.strokeRect(26, 178, 112, 18);
-            ctx.fillStyle = planeState.boostActive ? '#f43f5e' : '#f59e0b';
-            ctx.fillRect(28, 180, 108 * planeState.throttle, 14);
-
-            // --- INSTRUMENTO DIREITO: ALTITUDE & PONTOS ---
-            const altMeters = Math.max(0, Math.round(planeState.position.y));
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.fillText('ALTITUDE', w - 82, 48);
-
-            ctx.fillStyle = '#34d399';
-            ctx.font = 'bold 38px monospace';
-            ctx.fillText(`${altMeters}`, w - 82, 92);
-
-            ctx.fillStyle = '#cbd5e1';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText('METROS', w - 82, 114);
-
-            // Pontos / Tempo no painel VR
-            ctx.fillStyle = '#fde047';
-            ctx.font = 'bold 18px monospace';
-            ctx.fillText(`PTS: ${missionState.score}`, w - 82, 165);
-
-            if (gameMode === 'challenge') {
-                ctx.fillStyle = missionState.timeRemaining <= 15 ? '#f43f5e' : '#e2e8f0';
-                ctx.fillText(`TEMPO: ${Math.ceil(missionState.timeRemaining)}s`, w - 82, 195);
-            } else {
-                ctx.fillStyle = '#38bdf8';
-                ctx.fillText('VOO LIVRE', w - 82, 195);
-            }
-
-            // Alerta de Estol no painel
-            if (planeState.isStalling) {
-                ctx.fillStyle = 'rgba(220, 38, 38, 0.9)';
-                ctx.fillRect(cx - 75, h - 42, 150, 30);
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 18px sans-serif';
-                ctx.fillText('ALERTA ESTOL!', cx, h - 21);
-            }
-
-            instrumentTexture.needsUpdate = true;
-        }
-
-        // --- CIRCUITO DE ANÉIS AÉREOS E BALÕES ---
-        function setupMissionCourse() {
-            // Limpa anteriores se houver
-            rings.forEach(r => scene.remove(r.mesh));
-            balloons.forEach(b => scene.remove(b.mesh));
-            rings.length = 0;
-            balloons.length = 0;
-
-            // Rota circular panorâmica passando pelas ilhas e pista
-            const waypoints = [
-                new THREE.Vector3(0, 175, 180),
-                new THREE.Vector3(0, 165, -220),
-                new THREE.Vector3(340, 210, -520),
-                new THREE.Vector3(680, 275, -580),
-                new THREE.Vector3(450, 240, -1050),
-                new THREE.Vector3(0, 310, -1300),
-                new THREE.Vector3(-480, 250, -980),
-                new THREE.Vector3(-640, 220, -650),
-                new THREE.Vector3(-550, 190, -120),
-                new THREE.Vector3(-450, 185, 380),
-                new THREE.Vector3(0, 180, 520)
-            ];
-
-            waypoints.forEach((pos, idx) => {
-                const nextPos = waypoints[(idx + 1) % waypoints.length];
-                const ringGeo = new THREE.TorusGeometry(24, 2.2, 14, 36);
-                const ringMat = new THREE.MeshStandardMaterial({
-                    color: idx === 0 ? 0x10b981 : 0xf59e0b,
-                    emissive: idx === 0 ? 0x059669 : 0x78350f,
-                    emissiveIntensity: 0.6,
-                    roughness: 0.2
-                });
-                const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-                ringMesh.position.copy(pos);
-                ringMesh.lookAt(nextPos);
-                scene.add(ringMesh);
-
-                rings.push({ mesh: ringMesh, radius: 26, passed: false });
-
-                // Adiciona balões alvo próximos aos trechos entre anéis
-                const midPoint = new THREE.Vector3().lerpVectors(pos, nextPos, 0.5);
-                midPoint.x += (Math.random() - 0.5) * 60;
-                midPoint.y += (Math.random() - 0.5) * 35;
-                spawnBalloon(midPoint);
-            });
-
-            highlightActiveRing();
-        }
-
-        function spawnBalloon(position) {
-            const colors = [0xef4444, 0x3b82f6, 0xa855f7, 0xec4899, 0x14b8a6];
-            const color = colors[Math.floor(Math.random() * colors.length)];
-
-            const group = new THREE.Group();
-            group.position.copy(position);
-
-            const sphere = new THREE.Mesh(
-                new THREE.SphereGeometry(9, 16, 16),
-                new THREE.MeshStandardMaterial({ color, roughness: 0.25 })
-            );
-            sphere.scale.set(1, 1.2, 1);
-            group.add(sphere);
-
-            const basket = new THREE.Mesh(
-                new THREE.BoxGeometry(3, 2.5, 3),
-                new THREE.MeshLambertMaterial({ color: 0x78350f })
-            );
-            basket.position.y = -13;
-            group.add(basket);
-
-            scene.add(group);
-            balloons.push({ mesh: group, baseY: position.y, phase: Math.random() * Math.PI * 2, active: true });
-        }
-
-        function highlightActiveRing() {
-            rings.forEach((r, idx) => {
-                if (idx === missionState.activeRingIndex) {
-                    r.mesh.material.color.setHex(0x10b981); // Verde brilhante (próximo alvo)
-                    r.mesh.material.emissive.setHex(0x10b981);
-                    r.mesh.scale.setScalar(1.18);
-                } else {
-                    r.mesh.material.color.setHex(0xf59e0b); // Laranja padrão
-                    r.mesh.material.emissive.setHex(0x78350f);
-                    r.mesh.scale.setScalar(1.0);
-                }
-            });
-        }
-
-        // --- INTEGRAÇÃO WEBXR (ÓCULOS VR E CONTROLES DE MÃO) ---
-        function setupWebXR() {
-            const vrBtnMenu = document.getElementById('btn-enter-vr');
-            const vrBtnIngame = document.getElementById('btn-vr-ingame');
-            const vrBadge = document.getElementById('vr-status-badge');
-
-            if ('xr' in navigator) {
-                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
-                    if (supported) {
-                        vrBadge.textContent = '✅ Óculos VR Detectado';
-                        vrBadge.className = 'px-3 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30';
-                        vrBtnMenu.disabled = false;
-                        vrBtnIngame.classList.remove('hidden');
-                    } else {
-                        vrBadge.textContent = 'Modo Navegador / Giroscópio';
-                    }
-                }).catch(() => {
-                    vrBadge.textContent = 'Modo Navegador / Giroscópio';
-                });
-            } else {
-                vrBadge.textContent = 'Modo Navegador / Giroscópio';
-            }
-
-            const startVRSession = async () => {
-                SoundEngine.init();
-                if (!isGameRunning) {
-                    startFlight(gameMode);
-                }
-                try {
-                    const sessionInit = { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] };
-                    const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
-                    await renderer.xr.setSession(session);
-                } catch (err) {
-                    showBanner('Não foi possível iniciar o modo VR neste dispositivo.');
-                }
-            };
-
-            vrBtnMenu.addEventListener('click', startVRSession);
-            vrBtnIngame.addEventListener('click', startVRSession);
-
-            renderer.xr.addEventListener('sessionstart', () => {
-                isVRActive = true;
-                document.getElementById('main-menu').classList.add('hidden');
-                document.getElementById('flat-hud').classList.add('hidden');
-            });
-
-            renderer.xr.addEventListener('sessionend', () => {
-                isVRActive = false;
-                if (isGameRunning) {
-                    document.getElementById('flat-hud').classList.remove('hidden');
-                }
-            });
-
-            // Configura os 2 controles de mão VR (Esquerdo e Direito)
-            for (let i = 0; i < 2; i++) {
-                const controller = renderer.xr.getController(i);
-                // Modelo visual simples do controle VR dentro do cockpit
-                const ctrlMesh = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.015, 0.02, 0.14, 12),
-                    new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7 })
-                );
-                ctrlMesh.rotation.x = Math.PI / 2;
-                controller.add(ctrlMesh);
-
-                // Gatilho do controle VR dispara projéteis
-                controller.addEventListener('selectstart', () => {
-                    fireProjectile();
-                });
-
-                // Botão lateral (squeeze) ativa turbo
-                controller.addEventListener('squeezestart', () => {
-                    planeState.boostActive = true;
-                });
-                controller.addEventListener('squeezeend', () => {
-                    planeState.boostActive = false;
-                });
-
-                vrRig.add(controller);
-                vrControllers.push(controller);
-            }
-        }
-
-        // --- LEITURA UNIFICADA DE CONTROLES (VR, TECLADO, TOUCH, GIROSCÓPIO) ---
-        function processFlightInputs(dt) {
-            let pitch = 0;
-            let roll = 0;
-            let yaw = 0;
-            let throttleDelta = 0;
-
-            // 1. Controles Teclado (PC)
-            if (keys['ArrowUp']) pitch -= 1;
-            if (keys['ArrowDown']) pitch += 1;
-            if (keys['ArrowLeft'] || keys['KeyA']) roll += 1;
-            if (keys['ArrowRight'] || keys['KeyD']) roll -= 1;
-            if (keys['KeyQ']) yaw += 1;
-            if (keys['KeyE']) yaw -= 1;
-            if (keys['KeyW'] || keys['Equal'] || keys['NumpadAdd']) throttleDelta += 0.45 * dt;
-            if (keys['KeyS'] || keys['Minus'] || keys['NumpadSubtract']) throttleDelta -= 0.45 * dt;
-
-            if (keys['Space']) fireProjectile();
-            planeState.boostActive = Boolean(keys['ShiftLeft'] || keys['ShiftRight']);
-
-            // 2. Manche Virtual Touch (Mobile)
-            if (touchStick.active) {
-                roll -= touchStick.x;
-                pitch += touchStick.y;
-            }
-
-            // 3. Giroscópio Mobile (quando ativado)
-            if (gyroState.enabled && gyroState.baseBeta !== null) {
-                const dBeta = THREE.MathUtils.clamp((gyroState.beta - gyroState.baseBeta) / 25, -1, 1);
-                const dGamma = THREE.MathUtils.clamp((gyroState.gamma - gyroState.baseGamma) / 30, -1, 1);
-                pitch += dBeta;
-                roll -= dGamma;
-            }
-
-            // 4. Controles WebXR (Analógicos dos controles Meta Quest / VR)
-            if (isVRActive) {
-                const session = renderer.xr.getSession();
-                let hasGamepadAxes = false;
-
-                if (session && session.inputSources) {
-                    for (const source of session.inputSources) {
-                        if (source.gamepad && source.gamepad.axes.length >= 4) {
-                            const axX = source.gamepad.axes[2];
-                            const axY = source.gamepad.axes[3];
-                            if (Math.abs(axX) > 0.12 || Math.abs(axY) > 0.12) {
-                                hasGamepadAxes = true;
-                                if (source.handedness === 'right') {
-                                    // Manche direito: rolagem e arfagem
-                                    roll -= axX;
-                                    pitch += axY;
-                                } else if (source.handedness === 'left') {
-                                    // Manche esquerdo: potência do motor e leme
-                                    throttleDelta -= axY * 0.6 * dt;
-                                    yaw -= axX;
-                                } else {
-                                    roll -= axX;
-                                    pitch += axY;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Fallback Google Cardboard / VR sem controles de mão: pilotagem pela inclinação da cabeça!
-                if (!hasGamepadAxes) {
-                    const xrCam = renderer.xr.getCamera(camera);
-                    const headEuler = new THREE.Euler().setFromQuaternion(xrCam.quaternion, 'YXZ');
-                    if (Math.abs(headEuler.x) > 0.08) pitch += THREE.MathUtils.clamp(headEuler.x * 1.6, -1, 1);
-                    if (Math.abs(headEuler.z) > 0.08) roll += THREE.MathUtils.clamp(headEuler.z * 1.8, -1, 1);
-                }
-            }
-
-            // Suavização dos comandos
-            planeState.pitchInput = THREE.MathUtils.lerp(planeState.pitchInput, THREE.MathUtils.clamp(pitch, -1, 1), 8 * dt);
-            planeState.rollInput = THREE.MathUtils.lerp(planeState.rollInput, THREE.MathUtils.clamp(roll, -1, 1), 8 * dt);
-            planeState.yawInput = THREE.MathUtils.lerp(planeState.yawInput, THREE.MathUtils.clamp(yaw, -1, 1), 8 * dt);
-            planeState.throttle = THREE.MathUtils.clamp(planeState.throttle + throttleDelta, 0.1, 1.0);
-        }
-
-        // --- FÍSICA DE VOO E ATUALIZAÇÃO PRINCIPAL ---
-        function updateGame(dt) {
-            // Animação contínua das nuvens e balões mesmo no menu
-            clouds.forEach(c => {
-                c.position.x += 4 * dt;
-                if (c.position.x > 1800) c.position.x = -1800;
-            });
-
-            const timeNow = performance.now() * 0.002;
-            balloons.forEach(b => {
-                if (b.active) {
-                    b.mesh.position.y = b.baseY + Math.sin(timeNow + b.phase) * 4;
-                    b.mesh.rotation.y += 0.6 * dt;
-                }
-            });
-
-            if (!isGameRunning) {
-                // Voo automático panorâmico suave enquanto estiver no Menu Inicial
-                const autoAngle = performance.now() * 0.00018;
-                aircraftGroup.position.set(Math.cos(autoAngle) * 480, 220, Math.sin(autoAngle) * 480);
-                aircraftGroup.lookAt(
-                    Math.cos(autoAngle + 0.1) * 480,
-                    220,
-                    Math.sin(autoAngle + 0.1) * 480
-                );
-                if (propellerMesh) propellerMesh.rotation.z += 35 * dt;
-                planeState.position.copy(aircraftGroup.position);
-                planeState.quaternion.copy(aircraftGroup.quaternion);
-                updateCockpitInstruments();
-                return;
-            }
-
-            // Processa entradas do jogador
-            processFlightInputs(dt);
-
-            if (planeState.fireCooldown > 0) planeState.fireCooldown -= dt;
-
-            // Velocidade alvo baseada na potência do motor + turbo
-            const boostBonus = planeState.boostActive ? 38 : 0;
-            const targetSpeed = planeState.minSpeed + planeState.throttle * (planeState.maxSpeed - planeState.minSpeed) + boostBonus;
-
-            // Influência da gravidade ao subir ou mergulhar
-            const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(planeState.quaternion);
-            const climbFactor = forwardDir.y; // +1 apontando para cima, -1 mergulhando
-            const gravitySpeedEffect = -climbFactor * 22 * dt;
-
-            planeState.speed = THREE.MathUtils.lerp(planeState.speed, targetSpeed, 1.4 * dt) + gravitySpeedEffect;
-            planeState.speed = THREE.MathUtils.clamp(planeState.speed, 18, 165);
-
-            // Verificação de estol (velocidade muito baixa)
-            planeState.isStalling = planeState.speed < 27;
-
-            // Rotações locais da aeronave (Pitch, Roll, Yaw + curva coordenada pela rolagem)
-            const pitchRate = 1.15 * dt * planeState.pitchInput;
-            const rollRate = 1.85 * dt * planeState.rollInput;
-
-            // Curva natural ao inclinar as asas (banked turn)
-            const euler = new THREE.Euler().setFromQuaternion(planeState.quaternion, 'YXZ');
-            const bankTurnRate = Math.sin(euler.z) * 0.55 * dt;
-            const yawRate = (0.65 * dt * planeState.yawInput) + bankTurnRate;
-
-            const deltaQuat = new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(pitchRate, yawRate, rollRate, 'YXZ')
-            );
-            planeState.quaternion.multiply(deltaQuat).normalize();
-
-            // Se estiver em estol, o nariz tende a abaixar suavemente
-            if (planeState.isStalling) {
-                const stallDrop = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.35 * dt, 0, 0));
-                planeState.quaternion.multiply(stallDrop);
-                planeState.position.y -= 10 * dt;
-            }
-
-            // Deslocamento no espaço 3D
-            const moveStep = forwardDir.clone().multiplyScalar(planeState.speed * dt);
-            planeState.position.add(moveStep);
-
-            // Proteção contra colisão fatal na água/solo (pouso ou toque seguro)
-            const minSafeHeight = 9.5;
-            if (planeState.position.y < minSafeHeight) {
-                planeState.position.y = minSafeHeight;
-                // Nivela suavemente o nariz para não afundar
-                const levelEuler = new THREE.Euler().setFromQuaternion(planeState.quaternion, 'YXZ');
-                if (levelEuler.x < 0) {
-                    levelEuler.x = 0.04;
-                    planeState.quaternion.setFromEuler(levelEuler);
-                }
-            }
-
-            // Atualiza transformações visuais da aeronave e peças do cockpit
-            aircraftGroup.position.copy(planeState.position);
-            aircraftGroup.quaternion.copy(planeState.quaternion);
-
-            if (propellerMesh) {
-                propellerMesh.rotation.z += (15 + planeState.throttle * 45 + (planeState.boostActive ? 25 : 0)) * dt;
-            }
-            if (stickMesh) {
-                stickMesh.rotation.x = -planeState.pitchInput * 0.28;
-                stickMesh.rotation.z = planeState.rollInput * 0.32;
-            }
-            if (throttleLeverMesh) {
-                throttleLeverMesh.rotation.x = -(planeState.throttle - 0.5) * 0.7;
-            }
-
-            // Olhar livre com mouse no desktop (quando não está em VR)
-            if (!isVRActive) {
-                camera.rotation.set(mouseLook.pitchOffset, mouseLook.yawOffset, 0, 'YXZ');
-            }
-
-            // Atualiza projéteis disparados
-            updateProjectiles(dt);
-
-            // Verifica passagem pelos anéis aéreos
-            checkRingCollisions();
-
-            // Atualiza cronômetro no modo Desafio
-            if (gameMode === 'challenge') {
-                missionState.timeRemaining -= dt;
-                if (missionState.timeRemaining <= 0) {
-                    missionState.timeRemaining = 0;
-                    endChallengeMission();
-                }
-            }
-
-            // Atualiza áudio e mostradores 3D + 2D
-            const speedRatio = (planeState.speed - planeState.minSpeed) / (planeState.maxSpeed - planeState.minSpeed);
-            SoundEngine.update(planeState.throttle, THREE.MathUtils.clamp(speedRatio, 0, 1), true);
-            updateCockpitInstruments();
-            updateFlatHUD();
-        }
-
-        // --- SISTEMA DE DISPARO E COLISÕES ---
-        function fireProjectile() {
-            if (planeState.fireCooldown > 0 || !isGameRunning) return;
-            planeState.fireCooldown = 0.22;
-            SoundEngine.playLaserSound();
-
-            // Dispara de ambas as asas
-            [-2.2, 2.2].forEach(wingOffset => {
-                const bulletGeo = new THREE.SphereGeometry(0.45, 8, 8);
-                const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-                const mesh = new THREE.Mesh(bulletGeo, bulletMat);
-
-                const offsetVec = new THREE.Vector3(wingOffset, -0.1, -1.8).applyQuaternion(planeState.quaternion);
-                mesh.position.copy(planeState.position).add(offsetVec);
-
-                const velocity = new THREE.Vector3(0, 0, -1)
-                    .applyQuaternion(planeState.quaternion)
-                    .multiplyScalar(planeState.speed + 240);
-
-                scene.add(mesh);
-                bullets.push({ mesh, velocity, life: 2.2 });
-            });
-        }
-
-        function updateProjectiles(dt) {
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                const b = bullets[i];
-                b.mesh.position.addScaledVector(b.velocity, dt);
-                b.life -= dt;
-
-                // Testa colisão com balões
-                let hit = false;
-                for (let j = 0; j < balloons.length; j++) {
-                    const bal = balloons[j];
-                    if (bal.active && b.mesh.position.distanceTo(bal.mesh.position) < 13) {
-                        bal.active = false;
-                        bal.mesh.visible = false;
-                        hit = true;
-                        missionState.score += 50;
-                        SoundEngine.playPopSound();
-                        showBanner('BALÃO ESTOURADO! +50 PTS');
-
-                        // Reaparece o balão após 10 segundos
-                        setTimeout(() => {
-                            bal.active = true;
-                            bal.mesh.visible = true;
-                        }, 10000);
-                        break;
-                    }
-                }
-
-                if (hit || b.life <= 0) {
-                    scene.remove(b.mesh);
-                    bullets.splice(i, 1);
-                }
-            }
-        }
-
-        function checkRingCollisions() {
-            const targetRing = rings[missionState.activeRingIndex];
-            if (!targetRing) return;
-
-            const dist = planeState.position.distanceTo(targetRing.mesh.position);
-            if (dist < targetRing.radius) {
-                SoundEngine.playRingSound();
-                missionState.ringsPassed += 1;
-                missionState.score += 100;
-
-                if (gameMode === 'challenge') {
-                    missionState.timeRemaining = Math.min(120, missionState.timeRemaining + 8);
-                    showBanner('CHECKPOINT! +100 PTS (+8s)');
-                } else {
-                    showBanner('ANEL ATRAVESSADO! +100 PTS');
-                }
-
-                missionState.activeRingIndex = (missionState.activeRingIndex + 1) % rings.length;
-                highlightActiveRing();
-            }
-        }
-
-        // --- ATUALIZAÇÃO DA INTERFACE 2D E BANNERS ---
-        function updateFlatHUD() {
-            if (isVRActive) return;
-            document.getElementById('hud-speed').textContent = Math.round(planeState.speed * 1.94);
-            document.getElementById('hud-alt').textContent = Math.max(0, Math.round(planeState.position.y));
-            document.getElementById('hud-throttle').textContent = Math.round(planeState.throttle * 100);
-            document.getElementById('hud-score').textContent = missionState.score;
-
-            if (gameMode === 'challenge') {
-                document.getElementById('hud-timer').textContent = `${Math.ceil(missionState.timeRemaining)}s`;
-            }
-        }
-
-        let bannerTimeout = null;
-        function showBanner(text) {
-            const banner = document.getElementById('center-banner');
-            const label = document.getElementById('center-banner-text');
-            label.textContent = text;
-            banner.classList.remove('opacity-0', 'scale-95');
-            banner.classList.add('opacity-100', 'scale-100');
-
-            clearTimeout(bannerTimeout);
-            bannerTimeout = setTimeout(() => {
-                banner.classList.remove('opacity-100', 'scale-100');
-                banner.classList.add('opacity-0', 'scale-95');
-            }, 1800);
-        }
-
-        // --- FLUXO DE JOGO (INICIAR, REINICIAR, FIM DE MISSÃO) ---
-        function startFlight(selectedMode) {
-            gameMode = selectedMode;
-            SoundEngine.init();
-
-            // Reseta posição inicial alinhada com o primeiro anel e pista
-            planeState.position.set(0, 175, 520);
-            planeState.quaternion.identity();
-            planeState.speed = 65;
-            planeState.throttle = 0.75;
-            planeState.pitchInput = 0;
-            planeState.rollInput = 0;
-            planeState.yawInput = 0;
-
-            missionState.score = 0;
-            missionState.ringsPassed = 0;
-            missionState.timeRemaining = 90;
-            missionState.activeRingIndex = 0;
-            highlightActiveRing();
-
-            isGameRunning = true;
-            document.getElementById('main-menu').classList.add('hidden');
-            document.getElementById('gameover-modal').classList.add('hidden');
-
-            if (!isVRActive) {
-                document.getElementById('flat-hud').classList.remove('hidden');
-            }
-
-            const timerWrap = document.getElementById('hud-timer-wrap');
-            if (gameMode === 'challenge') {
-                timerWrap.classList.remove('hidden');
-                showBanner('PASSE PELOS ANÉIS VERDES!');
-            } else {
-                timerWrap.classList.add('hidden');
-                showBanner('VOO LIVRE INICIADO!');
-            }
-        }
-
-        function endChallengeMission() {
-            isGameRunning = false;
-            SoundEngine.update(0, 0, false);
-
-            // Se estiver em VR, sai da sessão VR para exibir o placar final com clareza
-            if (isVRActive && renderer.xr.getSession()) {
-                renderer.xr.getSession().end();
-            }
-
-            document.getElementById('flat-hud').classList.add('hidden');
-            document.getElementById('final-score').textContent = missionState.score;
-            document.getElementById('final-rings').textContent = `Anéis atravessados: ${missionState.ringsPassed}`;
-            document.getElementById('gameover-modal').classList.remove('hidden');
-        }
-
-        // --- EVENTOS DE UI, TECLADO, MOUSE, TOUCH E GIROSCÓPIO ---
-        function setupEventListeners() {
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-
-            // Seleção de modo no menu
-            const btnChallenge = document.getElementById('mode-challenge');
-            const btnFree = document.getElementById('mode-free');
-
-            btnChallenge.addEventListener('click', () => {
-                gameMode = 'challenge';
-                btnChallenge.className = 'mode-card active text-left p-4 rounded-2xl border-2 border-sky-400 bg-sky-500/15 transition';
-                btnFree.className = 'mode-card text-left p-4 rounded-2xl border-2 border-slate-700 bg-slate-800/60 hover:border-slate-500 transition';
-            });
-
-            btnFree.addEventListener('click', () => {
-                gameMode = 'free';
-                btnFree.className = 'mode-card active text-left p-4 rounded-2xl border-2 border-sky-400 bg-sky-500/15 transition';
-                btnChallenge.className = 'mode-card text-left p-4 rounded-2xl border-2 border-slate-700 bg-slate-800/60 hover:border-slate-500 transition';
-            });
-
-            document.getElementById('btn-start-standard').addEventListener('click', () => startFlight(gameMode));
-            document.getElementById('btn-restart-mission').addEventListener('click', () => startFlight('challenge'));
-            document.getElementById('btn-back-menu').addEventListener('click', () => {
-                document.getElementById('gameover-modal').classList.add('hidden');
-                document.getElementById('main-menu').classList.remove('hidden');
-            });
-
-            document.getElementById('btn-menu-open').addEventListener('click', () => {
-                isGameRunning = false;
-                SoundEngine.update(0, 0, false);
-                document.getElementById('flat-hud').classList.add('hidden');
-                document.getElementById('main-menu').classList.remove('hidden');
-            });
-
-            // Teclado
-            window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-            window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-            // Olhar ao redor do cockpit com o mouse (simula visão 360 VR no PC)
-            const domElem = renderer.domElement;
-            domElem.addEventListener('mousedown', (e) => {
-                mouseLook.isDragging = true;
-                mouseLook.prevX = e.clientX;
-                mouseLook.prevY = e.clientY;
-            });
-            window.addEventListener('mouseup', () => { mouseLook.isDragging = false; });
-            window.addEventListener('mousemove', (e) => {
-                if (!mouseLook.isDragging || isVRActive) return;
-                const dx = e.clientX - mouseLook.prevX;
-                const dy = e.clientY - mouseLook.prevY;
-                mouseLook.prevX = e.clientX;
-                mouseLook.prevY = e.clientY;
-                mouseLook.yawOffset = THREE.MathUtils.clamp(mouseLook.yawOffset - dx * 0.004, -1.6, 1.6);
-                mouseLook.pitchOffset = THREE.MathUtils.clamp(mouseLook.pitchOffset - dy * 0.004, -0.9, 1.1);
-            });
-            domElem.addEventListener('dblclick', () => {
-                mouseLook.yawOffset = 0;
-                mouseLook.pitchOffset = 0;
-            });
-
-            // Manche Virtual Touch para dispositivos móveis
-            const stickZone = document.getElementById('virtual-stick-zone');
-            const stickKnob = document.getElementById('virtual-stick-knob');
-            const maxRadius = 42;
-
-            const handleStickMove = (clientX, clientY) => {
-                const rect = stickZone.getBoundingClientRect();
-                const centerX = rect.left + rect.width / 2;
-                const centerY = rect.top + rect.height / 2;
-                let dx = clientX - centerX;
-                let dy = clientY - centerY;
-                const dist = Math.hypot(dx, dy);
-                if (dist > maxRadius) {
-                    dx = (dx / dist) * maxRadius;
-                    dy = (dy / dist) * maxRadius;
-                }
-                stickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-                touchStick.x = dx / maxRadius;
-                touchStick.y = dy / maxRadius;
-            };
-
-            stickZone.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                touchStick.active = true;
-                handleStickMove(e.touches[0].clientX, e.touches[0].clientY);
-            }, { passive: false });
-
-            stickZone.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                if (touchStick.active) {
-                    handleStickMove(e.touches[0].clientX, e.touches[0].clientY);
-                }
-            }, { passive: false });
-
-            const resetStick = () => {
-                touchStick.active = false;
-                touchStick.x = 0;
-                touchStick.y = 0;
-                stickKnob.style.transform = 'translate(0px, 0px)';
-            };
-            stickZone.addEventListener('touchend', resetStick);
-            stickZone.addEventListener('touchcancel', resetStick);
-
-            // Botões Touch (Motor, Turbo, Tiro)
-            document.getElementById('touch-throttle-up').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                planeState.throttle = Math.min(1, planeState.throttle + 0.12);
-            });
-            document.getElementById('touch-throttle-down').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                planeState.throttle = Math.max(0.1, planeState.throttle - 0.12);
-            });
-            document.getElementById('touch-fire').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                fireProjectile();
-            });
-            const boostBtn = document.getElementById('touch-boost');
-            boostBtn.addEventListener('touchstart', (e) => { e.preventDefault(); planeState.boostActive = true; });
-            boostBtn.addEventListener('touchend', () => { planeState.boostActive = false; });
-
-            // Giroscópio Mobile
-            const gyroBtn = document.getElementById('btn-gyro-toggle');
-            if (window.DeviceOrientationEvent) {
-                gyroBtn.classList.remove('hidden');
-            }
-            gyroBtn.addEventListener('click', async () => {
-                if (!gyroState.enabled) {
-                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        try {
-                            const perm = await DeviceOrientationEvent.requestPermission();
-                            if (perm !== 'granted') return;
-                        } catch (e) { return; }
-                    }
-                    gyroState.enabled = true;
-                    gyroState.baseBeta = null;
-                    gyroBtn.textContent = '📱 Giroscópio: ON';
-                    gyroBtn.classList.add('border-sky-400', 'text-sky-300');
-                } else {
-                    gyroState.enabled = false;
-                    gyroBtn.textContent = '📱 Giroscópio: OFF';
-                    gyroBtn.classList.remove('border-sky-400', 'text-sky-300');
-                }
-            });
-
-            window.addEventListener('deviceorientation', (e) => {
-                if (!gyroState.enabled || e.beta === null) return;
-                if (gyroState.baseBeta === null) {
-                    gyroState.baseBeta = e.beta;
-                    gyroState.baseGamma = e.gamma;
-                }
-                gyroState.beta = e.beta;
-                gyroState.gamma = e.gamma;
-            });
-        }
-
-        // Inicializa o simulador após o carregamento completo da página
-        window.onload = function () {
-            initScene();
-        };
-    </script>
+        // Atualiza HUD e Painel 3D
+        document.getElementById('hudSpeed').textContent = Math.round(flight.speed * 1.9);
+        document.getElementById('hudAlt').textContent = Math.round(aircraft.position.y);
+        document.getElementById('hudThrottle').textContent = Math.round(flight.throttle * 100);
+        updateDashboard();
+      }
+
+      if (isStereoMode && !renderer.xr.isPresenting) {
+        stereoEffect.render(scene, camera);
+      } else {
+        renderer.render(scene, camera);
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
 </body>
 </html>
